@@ -1,1 +1,45 @@
+name: Collect Six Flags wait times
+
+on:
+  schedule:
+    # GitHub cron is in UTC. Park hours Fri-Sun in Central Time (CDT/CST) fall
+    # between Fri ~15:00 UTC and Mon ~05:30 UTC, so only those windows are
+    # scheduled. collect_waits.py does the exact Central-Time day/hour check
+    # itself (including daylight saving) and logs each half-hour slot once.
+    - cron: "*/15 15-23 * * 5"   # Friday
+    - cron: "*/15 * * * 6,0"     # Saturday, Sunday
+    - cron: "*/15 0-5 * * 1"     # early Monday UTC = Sunday night Central
+  workflow_dispatch: {}          # lets you run it by hand from the Actions tab
+
+permissions:
+  contents: write
+
+concurrency:
+  group: collect-waits
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Log current wait times
+        run: python collect_waits.py ${{ github.event_name == 'workflow_dispatch' && '--force' || '' }}
+
+      - name: Commit the updated log
+        run: |
+          git config user.name "wait-time-bot"
+          git config user.email "wait-time-bot@users.noreply.github.com"
+          git add waits_log.csv
+          if git diff --cached --quiet; then
+            echo "Nothing new to commit."
+          else
+            git commit -m "Log wait times $(date -u +'%Y-%m-%d %H:%M UTC')"
+            git push
+          fi
 
